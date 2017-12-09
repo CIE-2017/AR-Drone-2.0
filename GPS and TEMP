@@ -1,0 +1,184 @@
+#include <SoftwareSerial.h> 
+#include <ESP8266HTTPClient.h>
+#include <ESP8266WiFi.h>
+
+#define URI "http://172.20.10.3:8000/drone/cam/upload"
+
+#define TEMP_PIN A0
+byte incomingbyte;
+
+//Configure pin 4 and 5 as soft serial port
+//SoftwareSerial cameraSerial = SoftwareSerial(4, 5); 
+
+SoftwareSerial GPSModule(12, 11); // TX, RX
+int a=0x0000,  //Read Starting address     
+    j=0,
+    k=0,
+    count=0;
+uint8_t MH,ML;
+boolean EndFlag=0;
+
+
+void setup() { 
+  Serial.begin(115200);  
+  GPSModule.begin(9600);
+  setupWifi();     
+}
+
+void loop() {
+  float tempC = (5.0 * analogRead(TEMP_PIN) * 100.0) / 1540;
+  String temp = "";
+  if (tempC > 15) {
+    String gps = gpsFunc();
+    Serial.println(gps); 
+    temp.concat(tempC);
+    Serial.println(temp); 
+    String res = makeRequest(gps, temp);
+    Serial.println(res); 
+  }
+}
+
+void setupWifi(){
+  //Serial connection
+  WiFi.begin("BrightYoshinon", "brightktt");   //WiFi connection
+
+  while (WiFi.status() != WL_CONNECTED) {  //Wait for the WiFI connection completion
+      delay(500);
+      Serial.println("Waiting for connection");
+  }
+  Serial.println("Connected"); 
+}
+
+
+String makeRequest(String gps, String temp){
+    Serial.print("Start HTTP ");
+    String res;
+    String body = "";
+    body.concat("tem=");
+    body.concat(temp);
+    body.concat("&gps=");
+    body.concat(gps);
+    
+    
+    HTTPClient http;
+    http.begin(URI);
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    int httpCode = http.POST(body);
+    
+    Serial.print("HTTP status: ");
+    Serial.println(httpCode);
+    Serial.println(body);
+    res = http.getString();
+    http.end();
+    return res;
+}
+
+String gpsFunc(void) {
+    int pos = 0;
+    int stringplace = 0;
+    String total("");
+    String nmea[15];
+    String labels[12] {
+        "Time: ",
+            "Status: ",
+            "Latitude: ",
+            "Hemisphere: ",
+            "Longitude: ",
+            "Hemisphere: ",
+            "Speed: ",
+            "Track Angle: ",
+            "Date: "
+    };
+
+    Serial.flush();
+    GPSModule.flush();
+    while (GPSModule.available() > 0)
+    {
+        GPSModule.read();
+
+    }
+    if (GPSModule.find("$GPRMC,")) {
+        String tempMsg = GPSModule.readStringUntil('\n');
+        for (int i = 0; i < tempMsg.length(); i++) {
+            if (tempMsg.substring(i, i + 1) == ",") {
+                nmea[pos] = tempMsg.substring(stringplace, i);
+                stringplace = i + 1;
+                pos++;
+            }
+
+            if (i == tempMsg.length() - 1) {
+                nmea[pos] = tempMsg.substring(stringplace, i);
+            }
+        }
+        /* updates++; */
+        nmea[2] = ConvertLat(nmea[2], nmea[3]);
+        nmea[4] = ConvertLng(nmea[4], nmea[5]);
+        for (int i = 0; i < 9; i++) {
+            total.concat(labels[i]);
+            total.concat(nmea[i]);
+        }
+
+    }
+    else {
+        /* failedUpdates++; */
+    }
+
+    return total;
+}
+
+//------------------------------------//
+String ConvertLat(String n2, String n3) {
+    String posneg = "";
+    if (n3 == "S") {
+        posneg = "-";
+    }
+    String latfirst;
+    float latsecond;
+    for (int i = 0; i < n2.length(); i++) {
+        if (n2.substring(i, i + 1) == ".") {
+            latfirst = n2.substring(0, i - 2);
+            latsecond = n2.substring(i - 2).toFloat();
+        }
+    }
+    latsecond = latsecond / 60;
+    String CalcLat = "";
+
+    char charVal[9];
+    dtostrf(latsecond, 4, 6, charVal);
+    for (int i = 0; i < sizeof(charVal); i++)
+    {
+        CalcLat += charVal[i];
+    }
+    latfirst += CalcLat.substring(1);
+    latfirst = posneg += latfirst;
+    return latfirst;
+}
+
+String ConvertLng(String n4, String n5) {
+    String posneg = "";
+    if (n5 == "W") {
+        posneg = "-";
+    }
+
+    String lngfirst;
+    float lngsecond;
+    for (int i = 0; i < n4.length(); i++) {
+        if (n4.substring(i, i + 1) == ".") {
+            lngfirst = n4.substring(0, i - 2);
+            //Serial.println(lngfirst);
+            lngsecond = n4.substring(i - 2).toFloat();
+            //Serial.println(lngsecond);
+        }
+    }
+    lngsecond = lngsecond / 60;
+    String CalcLng = "";
+    char charVal[9];
+    dtostrf(lngsecond, 4, 6, charVal);
+    for (int i = 0; i < sizeof(charVal); i++)
+    {
+        CalcLng += charVal[i];
+    }
+    lngfirst += CalcLng.substring(1);
+    lngfirst = posneg += lngfirst;
+    return lngfirst;
+}
