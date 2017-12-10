@@ -28,7 +28,7 @@ void setup() {
 void loop() {
   float tempC = (5.0 * analogRead(TEMP_PIN) * 100.0) / 1540;
   String temp = "";
-  if (tempC > 15) {
+  if (tempC > 70) {
     String gps = gpsFunc();
     Serial.println(gps); 
     temp.concat(tempC);
